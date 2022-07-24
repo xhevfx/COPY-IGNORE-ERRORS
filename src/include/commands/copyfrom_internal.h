@@ -17,6 +17,9 @@
 #include "commands/copy.h"
 #include "commands/trigger.h"
 
+/* User-settable GUC parameters */
+int			replay_buffer_size;
+
 /*
  * Represents the different source cases we need to worry about at
  * the bottom level

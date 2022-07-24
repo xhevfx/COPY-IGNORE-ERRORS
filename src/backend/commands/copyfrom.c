@@ -551,15 +551,17 @@ CopyFrom(CopyFromState cstate)
 	bool		leafpart_use_multi_insert = false;
 
 	/* variables for copy from ignore_errors option */
-#define			REPLAY_BUFFER_SIZE 3
-	HeapTuple		replay_buffer[REPLAY_BUFFER_SIZE];
+	HeapTuple		*replay_buffer;
 	HeapTuple 		replay_tuple;
 	int 			saved_tuples = 0;
 	int				replayed_tuples = 0;
+	int 			errors = 0;
 	bool			replay_is_active = false;
 	bool			begin_subtransaction = true;
 	bool            find_error = false;
 	bool			last_replaying = false;
+
+	replay_buffer = (HeapTuple *) palloc(replay_buffer_size * sizeof(HeapTuple));
 
 	Assert(cstate->rel);
 	Assert(list_length(cstate->range_table) == 1);
@@ -886,7 +888,7 @@ CopyFrom(CopyFromState cstate)
 						CurrentResourceOwner = oldowner;
 					}
 
-					if (saved_tuples < REPLAY_BUFFER_SIZE)
+					if (saved_tuples < replay_buffer_size)
 					{
 						valid_row = NextCopyFrom(cstate, econtext, myslot->tts_values, myslot->tts_isnull);
 						if (valid_row)
@@ -923,7 +925,7 @@ CopyFrom(CopyFromState cstate)
 					}
 					else
 					{
-						MemSet(replay_buffer, 0, REPLAY_BUFFER_SIZE * sizeof(HeapTuple));
+						MemSet(replay_buffer, 0, replay_buffer_size * sizeof(HeapTuple));
 						saved_tuples = 0;
 						replayed_tuples = 0;
 
@@ -944,7 +946,9 @@ CopyFrom(CopyFromState cstate)
 					case ERRCODE_BAD_COPY_FILE_FORMAT:
 					case ERRCODE_INVALID_TEXT_REPRESENTATION:
 						RollbackAndReleaseCurrentSubTransaction();
-						elog(WARNING, "%s", errdata->context);
+						errors++;
+						if (errors <= 100)
+							elog(WARNING, "%s", errdata->context);
 
 						begin_subtransaction = true;
 						find_error = true;
@@ -976,10 +980,16 @@ CopyFrom(CopyFromState cstate)
 						last_replaying = true;
 					}
 					else
+					{
+						elog(WARNING, "%s %d %s", "FIND", errors, "ERRORS");
 						break;
+					}
 				}
 				else
-					break;
+					{
+						elog(WARNING, "%s %d %s", "FIND", errors, "ERRORS");
+						break;
+					}
 			}
 
 			if (skip_row)
